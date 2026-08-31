@@ -2,7 +2,6 @@ import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { Timer } from 'three/addons/misc/Timer.js';
 
 export const Scene3D: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -27,7 +26,7 @@ export const Scene3D: React.FC = () => {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     
-    // Sostituito PCFSoftShadowMap (deprecato) con PCFShadowMap
+    // PCFShadowMap al posto di PCFSoftShadowMap (deprecato)
     renderer.shadowMap.type = THREE.PCFShadowMap;
     
     container.appendChild(renderer.domElement);
@@ -48,7 +47,6 @@ export const Scene3D: React.FC = () => {
     const gltfLoader = new GLTFLoader();
     gltfLoader.setDRACOLoader(dracoLoader);
 
-    // Percorso base per GitHub Pages / ambiente locale
     const baseUrl = import.meta.env.BASE_URL || '/';
     
     gltfLoader.load(
@@ -67,18 +65,18 @@ export const Scene3D: React.FC = () => {
       (error) => console.error('Errore nel caricamento del modello 3D:', error)
     );
 
-    // 4. Timer Animation Loop (sostituisce THREE.Clock deprecato)
-    const timer = new Timer();
+    // 4. Loop di animazione nativo (zero dipendenze esterne)
     let animationFrameId: number;
+    let lastTime = performance.now();
 
-    const animate = (timestamp: number) => {
+    const animate = (time: number) => {
       animationFrameId = requestAnimationFrame(animate);
 
-      // Aggiorna il timer fornendo il timestamp nativo
-      timer.update(timestamp);
-      const delta = timer.getDelta();
+      // Delta time in secondi senza usare THREE.Clock o moduli deprecati
+      const delta = (time - lastTime) / 1000;
+      lastTime = time;
 
-      // Qui puoi inserire eventuali animazioni usando 'delta'
+      // Inserisci qui eventuale logica di rotazione/animazione usando 'delta'
       renderer.render(scene, camera);
     };
 
@@ -94,7 +92,7 @@ export const Scene3D: React.FC = () => {
 
     window.addEventListener('resize', handleResize);
 
-    // Cleanup alla smontaggio del componente
+    // Cleanup allo smontaggio del componente
     return () => {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
