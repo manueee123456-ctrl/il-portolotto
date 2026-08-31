@@ -682,7 +682,7 @@ function Rig() {
 }
 
 /* ============================================================ optional real models
-   Drop `barca.glb` / `mare.glb` into public/models and they replace the
+   Drop `format1.glb` / `mar.glb` into public/models and they replace the
    procedural ship and sea automatically. Missing files → graceful fallback. */
 function ExternalModels() {
   const [ship, setShip] = useState<THREE.Object3D | null>(null);
@@ -692,8 +692,11 @@ function ExternalModels() {
   useEffect(() => {
     const loader = new GLTFLoader();
     let alive = true;
+
+    const baseUrl = import.meta.env.BASE_URL;
+
     loader.load(
-      "/models/barca.glb",
+      `${baseUrl}models/format1.glb`,
       (g) => {
         if (!alive) return;
         g.scene.traverse((o) => {
@@ -706,16 +709,18 @@ function ExternalModels() {
         setShip(g.scene);
       },
       undefined,
-      () => {}
+      (err) => console.log("Fallback su barca procedurale:", err)
     );
+
     loader.load(
-      "/models/mare.glb",
+      `${baseUrl}models/mar.glb`,
       (g) => {
         if (alive) setSea(g.scene);
       },
       undefined,
-      () => {}
+      (err) => console.log("Fallback su mare procedurale:", err)
     );
+
     return () => {
       alive = false;
     };
