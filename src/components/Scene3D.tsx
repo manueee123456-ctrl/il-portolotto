@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
-import { Timer } from 'three/examples/jsm/misc/Timer.js';
+import { Timer } from 'three/addons/misc/Timer.js';
 
 export const Scene3D: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
