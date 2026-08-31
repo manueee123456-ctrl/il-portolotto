@@ -11,52 +11,48 @@ export const Scene3D: React.FC = () => {
     const container = containerRef.current;
     if (!container) return;
 
-    // 1. Scena, Nebbia e Renderer
+    // 1. Scena e Luce Ambientale Pulita
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87ceeb); // Cielo Azzurro
-    scene.fog = new THREE.FogExp2(0x87ceeb, 0.012);
+    scene.background = new THREE.Color(0xbae6fd); // Cielo chiaro e brillante
 
     const camera = new THREE.PerspectiveCamera(
       45,
       container.clientWidth / container.clientHeight,
       0.1,
-      1000
+      2000
     );
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.2;
+    renderer.toneMappingExposure = 1.0;
+    
+    // Corretto il tipo di ombre per evitare il warning PCFSoftShadowMap
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
 
     container.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // 2. Luce Solare e Sole in Cielo
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.3);
+    // 2. Illuminazione Naturale (Senza sfere o elementi visibili brutti)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
     scene.add(ambientLight);
 
-    const sunLight = new THREE.DirectionalLight(0xfffaed, 2.8);
-    sunLight.position.set(30, 50, 20);
+    const sunLight = new THREE.DirectionalLight(0xffffff, 2.5);
+    sunLight.position.set(50, 80, 50);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.width = 2048;
     sunLight.shadow.mapSize.height = 2048;
     scene.add(sunLight);
 
-    // Mesh del Sole visibile in cielo
-    const sunMesh = new THREE.Mesh(
-      new THREE.SphereGeometry(3, 32, 32),
-      new THREE.MeshBasicMaterial({ color: 0xffdd66 })
-    );
-    sunMesh.position.copy(sunLight.position);
-    scene.add(sunMesh);
+    const hemisphereLight = new THREE.HemisphereLight(0xffffff, 0x38bdf8, 1.0);
+    scene.add(hemisphereLight);
 
-    // 3. Loader & Gestione Animazioni
+    // 3. Setup Caricamento Modelli
     const mixers: THREE.AnimationMixer[] = [];
     let lastTime = performance.now();
 
@@ -78,7 +74,11 @@ export const Scene3D: React.FC = () => {
       }
     };
 
-    // 4. Caricamento Parallelo: format1.glb e mar.glb
+    // Gruppo unico per mantenere sincronizzati Porto e Mare nelle stesse coordinate
+    const worldGroup = new THREE.Group();
+    scene.add(worldGroup);
+
+    // 4. Caricamento Modello Porto (format1.glb)
     const loadMainModel = new Promise<THREE.Group>((resolve) => {
       gltfLoader.load(`${baseUrl}models/format1.glb`, (gltf) => {
         const model = gltf.scene;
@@ -88,32 +88,37 @@ export const Scene3D: React.FC = () => {
             child.receiveShadow = true;
           }
         });
-        scene.add(model);
+        worldGroup.add(model);
         playAnimations(gltf);
         resolve(model);
       });
     });
 
+    // 5. Caricamento Modello Mare (mar.glb) con correzione trasparenza e colore
     const loadWaterModel = new Promise<THREE.Group | null>((resolve) => {
       gltfLoader.load(
         `${baseUrl}models/mar.glb`,
         (gltf) => {
           const waterModel = gltf.scene;
 
-          // Assicura visibilità ed effetto trasparente all'acqua
           waterModel.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
               const mesh = child as THREE.Mesh;
-              const mat = mesh.material as THREE.MeshStandardMaterial;
-              if (mat) {
-                mat.transparent = true;
-                mat.opacity = 0.85;
-                mat.side = THREE.DoubleSide;
-              }
+              
+              // Forzatura materiale acqua blu lucido e semi-trasparente
+              mesh.material = new THREE.MeshStandardMaterial({
+                color: 0x0284c7,
+                roughness: 0.1,
+                metalness: 0.1,
+                transparent: true,
+                opacity: 0.8,
+                side: THREE.DoubleSide,
+                depthWrite: false
+              });
             }
           });
 
-          scene.add(waterModel);
+          worldGroup.add(waterModel);
           playAnimations(gltf);
           resolve(waterModel);
         },
@@ -125,33 +130,27 @@ export const Scene3D: React.FC = () => {
       );
     });
 
-    // Sincronizza il posizionamento e la telecamera una volta caricati i modelli
-    Promise.all([loadMainModel, loadWaterModel]).then(([mainModel, waterModel]) => {
-      const box = new THREE.Box3().setFromObject(mainModel);
+    // 6. Centratura Scena e Posizionamento Telecamera
+    Promise.all([loadMainModel, loadWaterModel]).then(([mainModel]) => {
+      const box = new THREE.Box3().setFromObject(worldGroup);
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
 
-      // Centra il modello principale
-      mainModel.position.sub(center);
+      // Centra l'intero mondo al punto (0,0,0) mantenendo l'allineamento porto-mare
+      worldGroup.position.sub(center);
 
-      // Sincronizza la posizione dell'acqua al centro del porto
-      if (waterModel) {
-        waterModel.position.sub(center);
-      }
-
-      // Imposta la fotocamera proporzionalmente
       const maxDim = Math.max(size.x, size.y, size.z);
       const fov = camera.fov * (Math.PI / 180);
       const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
 
-      camera.position.set(cameraZ * 0.7, maxDim * 0.5, cameraZ);
+      camera.position.set(cameraZ * 0.8, maxDim * 0.6, cameraZ * 1.2);
       camera.lookAt(0, 0, 0);
 
       controls.target.set(0, 0, 0);
       controls.update();
     });
 
-    // 5. Render loop per eseguire tutte le animazioni
+    // 7. Render Loop
     let animationFrameId: number;
 
     const animate = (currentTime: number) => {
