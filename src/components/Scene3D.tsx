@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 
 export const Scene3D: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -16,8 +17,8 @@ export const Scene3D: React.FC = () => {
     const camera = new THREE.PerspectiveCamera(
       45,
       container.clientWidth / container.clientHeight,
-      0.1,
-      1000
+      0.01,
+      10000
     );
     camera.position.set(0, 2, 5);
 
@@ -25,17 +26,19 @@ export const Scene3D: React.FC = () => {
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    
-    // PCFShadowMap al posto di PCFSoftShadowMap (deprecato)
     renderer.shadowMap.type = THREE.PCFShadowMap;
     
     container.appendChild(renderer.domElement);
 
-    // 2. Luci
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.2);
+    // Controlli Mouse (OrbitControls)
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    // 2. Luci (Aumentate per visibilità)
+    const ambientLight = new THREE.AmbientLight(0xffffff, 2);
     scene.add(ambientLight);
 
-    const dirLight = new THREE.DirectionalLight(0xffffff, 2);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 3);
     dirLight.position.set(5, 10, 7);
     dirLight.castShadow = true;
     scene.add(dirLight);
@@ -53,34 +56,55 @@ export const Scene3D: React.FC = () => {
       `${baseUrl}models/format1.glb`,
       (gltf) => {
         const model = gltf.scene;
+
+        // Abilita ombre sulle mesh
         model.traverse((child) => {
           if ((child as THREE.Mesh).isMesh) {
             child.castShadow = true;
             child.receiveShadow = true;
           }
         });
+
         scene.add(model);
+
+        // --- AUTOFOCUS & CENTRAGGIO DEL MODELLO ---
+        const box = new THREE.Box3().setFromObject(model);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+
+        // Sposta il modello al centro preciso dell'origine (0,0,0)
+        model.position.x += (model.position.x - center.x);
+        model.position.y += (model.position.y - center.y);
+        model.position.z += (model.position.z - center.z);
+
+        // Calcola la distanza ideale per la telecamera in base alla dimensione
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const fov = camera.fov * (Math.PI / 180);
+        let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
+
+        // Imposta una distanza minima se l'oggetto è piccolissimo
+        cameraZ = Math.max(cameraZ, 2);
+
+        camera.position.set(0, maxDim / 2, cameraZ);
+        camera.lookAt(0, 0, 0);
+
+        controls.target.set(0, 0, 0);
+        controls.update();
       },
       undefined,
       (error) => console.error('Errore nel caricamento del modello 3D:', error)
     );
 
-    // 4. Loop di animazione nativo (zero dipendenze esterne)
+    // 4. Loop di animazione
     let animationFrameId: number;
-    let lastTime = performance.now();
 
-    const animate = (time: number) => {
+    const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
-
-      // Delta time in secondi senza usare THREE.Clock o moduli deprecati
-      const delta = (time - lastTime) / 1000;
-      lastTime = time;
-
-      // Inserisci qui eventuale logica di rotazione/animazione usando 'delta'
+      controls.update();
       renderer.render(scene, camera);
     };
 
-    animationFrameId = requestAnimationFrame(animate);
+    animate();
 
     // 5. Gestione Resize Finestra
     const handleResize = () => {
@@ -92,7 +116,7 @@ export const Scene3D: React.FC = () => {
 
     window.addEventListener('resize', handleResize);
 
-    // Cleanup allo smontaggio del componente
+    // Cleanup allo smontaggio
     return () => {
       window.removeEventListener('resize', handleResize);
       cancelAnimationFrame(animationFrameId);
@@ -107,7 +131,7 @@ export const Scene3D: React.FC = () => {
   return (
     <div 
       ref={containerRef} 
-      style={{ width: '100%', height: '100vh', overflow: 'hidden' }} 
+      style={{ width: '100%', height: '100vh', overflow: 'hidden', background: '#1a1a1a' }} 
     />
   );
 };
