@@ -1,8 +1,7 @@
 import React from 'react';
+import barcaImg from './assets/7fca250f8b5d1a353ea58185f988983eecd60d4637a5f5ecd3830f23d5ef3a54_Nero_AI_Image_Upscaler_Photo_Face.webp';
 
 export const Scene3D: React.FC = () => {
-  const baseUrl = import.meta.env.BASE_URL || '/';
-
   return (
     <div 
       style={{ 
@@ -13,7 +12,7 @@ export const Scene3D: React.FC = () => {
       }}
     >
       <img
-        src={`${baseUrl}7fca250f8b5d1a353ea58185f988983eecd60d4637a5f5ecd3830f23d5ef3a54_Nero_AI_Image_Upscaler_Photo_Face.webp`}
+        src={barcaImg}
         alt="Barca a vela al tramonto"
         style={{
           width: '100%',
