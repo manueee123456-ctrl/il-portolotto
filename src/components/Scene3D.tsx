@@ -3,6 +3,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Sparkles, Float } from "@react-three/drei";
 import { EffectComposer, Bloom, Vignette } from "@react-three/postprocessing";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import * as THREE from "three";
 
 /* lighter pipeline on phones: no post-processing, no shadow maps, fewer verts */
@@ -681,18 +682,20 @@ function Rig() {
   return null;
 }
 
-/* ============================================================ optional real models
-   Drop `format1.glb` / `mar.glb` into public/models and they replace the
-   procedural ship and sea automatically. Missing files → graceful fallback. */
+/* ============================================================ real models loader */
 function ExternalModels() {
   const [ship, setShip] = useState<THREE.Object3D | null>(null);
   const [sea, setSea] = useState<THREE.Object3D | null>(null);
   const shipRef = useRef<THREE.Group>(null!);
 
   useEffect(() => {
-    const loader = new GLTFLoader();
-    let alive = true;
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath("https://www.gstatic.com/draco/v1/decoders/");
 
+    const loader = new GLTFLoader();
+    loader.setDRACOLoader(dracoLoader);
+
+    let alive = true;
     const baseUrl = import.meta.env.BASE_URL;
 
     loader.load(
@@ -723,6 +726,7 @@ function ExternalModels() {
 
     return () => {
       alive = false;
+      dracoLoader.dispose();
     };
   }, []);
 
