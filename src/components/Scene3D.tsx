@@ -13,7 +13,7 @@ export const Scene3D: React.FC = () => {
 
     // 1. Scena, Nebbia e Renderer
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x87ceeb); // Cielo azzurro
+    scene.background = new THREE.Color(0x87ceeb); // Cielo Azzurro
     scene.fog = new THREE.FogExp2(0x87ceeb, 0.012);
 
     const camera = new THREE.PerspectiveCamera(
@@ -37,7 +37,7 @@ export const Scene3D: React.FC = () => {
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // 2. Luce Solare e Sole
+    // 2. Luce Solare e Sole in Cielo
     const ambientLight = new THREE.AmbientLight(0xffffff, 1.3);
     scene.add(ambientLight);
 
@@ -48,7 +48,7 @@ export const Scene3D: React.FC = () => {
     sunLight.shadow.mapSize.height = 2048;
     scene.add(sunLight);
 
-    // Sole visibile in cielo
+    // Mesh del Sole visibile in cielo
     const sunMesh = new THREE.Mesh(
       new THREE.SphereGeometry(3, 32, 32),
       new THREE.MeshBasicMaterial({ color: 0xffdd66 })
@@ -56,7 +56,7 @@ export const Scene3D: React.FC = () => {
     sunMesh.position.copy(sunLight.position);
     scene.add(sunMesh);
 
-    // 3. Loader & Gestore Animazioni (Mixers)
+    // 3. Loader & Gestione Animazioni
     const mixers: THREE.AnimationMixer[] = [];
     let lastTime = performance.now();
 
@@ -68,7 +68,6 @@ export const Scene3D: React.FC = () => {
 
     const baseUrl = import.meta.env.BASE_URL || '/';
 
-    // Funzione helper per avviare le animazioni di un modello
     const playAnimations = (gltf: any) => {
       if (gltf.animations && gltf.animations.length > 0) {
         const mixer = new THREE.AnimationMixer(gltf.scene);
@@ -79,8 +78,8 @@ export const Scene3D: React.FC = () => {
       }
     };
 
-    // 4. Caricamento Parallelo dei due file .GLB
-    const loadMainModel = new Promise((resolve) => {
+    // 4. Caricamento Parallelo: format1.glb e mar.glb
+    const loadMainModel = new Promise<THREE.Group>((resolve) => {
       gltfLoader.load(`${baseUrl}models/format1.glb`, (gltf) => {
         const model = gltf.scene;
         model.traverse((child) => {
@@ -95,38 +94,52 @@ export const Scene3D: React.FC = () => {
       });
     });
 
-    const loadWaterModel = new Promise((resolve) => {
-      // Sostituisci "water.glb" col nome esatto del tuo file nella cartella public/models/
-      gltfLoader.load(`${baseUrl}models/water.glb`, (gltf) => {
-        const waterModel = gltf.scene;
-        
-        // Rende il materiale dell'acqua semi-trasparente se non lo è già
-        waterModel.traverse((child) => {
-          if ((child as THREE.Mesh).isMesh) {
-            const mesh = child as THREE.Mesh;
-            const mat = mesh.material as THREE.MeshStandardMaterial;
-            if (mat) {
-              mat.transparent = true;
-              mat.opacity = 0.85;
-              mat.side = THREE.DoubleSide;
-            }
-          }
-        });
+    const loadWaterModel = new Promise<THREE.Group | null>((resolve) => {
+      gltfLoader.load(
+        `${baseUrl}models/mar.glb`,
+        (gltf) => {
+          const waterModel = gltf.scene;
 
-        scene.add(waterModel);
-        playAnimations(gltf); // Avvia l'animazione dell'acqua (es. onde riggate)
-        resolve(waterModel);
-      }, undefined, () => resolve(null)); // Ignora se il file non esiste ancora
+          // Assicura visibilità ed effetto trasparente all'acqua
+          waterModel.traverse((child) => {
+            if ((child as THREE.Mesh).isMesh) {
+              const mesh = child as THREE.Mesh;
+              const mat = mesh.material as THREE.MeshStandardMaterial;
+              if (mat) {
+                mat.transparent = true;
+                mat.opacity = 0.85;
+                mat.side = THREE.DoubleSide;
+              }
+            }
+          });
+
+          scene.add(waterModel);
+          playAnimations(gltf);
+          resolve(waterModel);
+        },
+        undefined,
+        (err) => {
+          console.error('Errore nel caricamento di mar.glb:', err);
+          resolve(null);
+        }
+      );
     });
 
-    // Inquadratura basata sul modello principale
-    loadMainModel.then((model: any) => {
-      const box = new THREE.Box3().setFromObject(model);
+    // Sincronizza il posizionamento e la telecamera una volta caricati i modelli
+    Promise.all([loadMainModel, loadWaterModel]).then(([mainModel, waterModel]) => {
+      const box = new THREE.Box3().setFromObject(mainModel);
       const center = box.getCenter(new THREE.Vector3());
       const size = box.getSize(new THREE.Vector3());
 
-      model.position.sub(center);
+      // Centra il modello principale
+      mainModel.position.sub(center);
 
+      // Sincronizza la posizione dell'acqua al centro del porto
+      if (waterModel) {
+        waterModel.position.sub(center);
+      }
+
+      // Imposta la fotocamera proporzionalmente
       const maxDim = Math.max(size.x, size.y, size.z);
       const fov = camera.fov * (Math.PI / 180);
       const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.5;
@@ -138,7 +151,7 @@ export const Scene3D: React.FC = () => {
       controls.update();
     });
 
-    // 5. Render loop (aggiorna tutti i mixers delle animazioni)
+    // 5. Render loop per eseguire tutte le animazioni
     let animationFrameId: number;
 
     const animate = (currentTime: number) => {
@@ -147,7 +160,6 @@ export const Scene3D: React.FC = () => {
       const delta = (currentTime - lastTime) / 1000;
       lastTime = currentTime;
 
-      // Aggiorna le animazioni sia del porto che dell'acqua
       mixers.forEach((mixer) => mixer.update(delta));
 
       controls.update();
