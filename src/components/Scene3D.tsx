@@ -11,9 +11,10 @@ export const Scene3D: React.FC = () => {
     const container = containerRef.current;
     if (!container) return;
 
-    // 1. Scena, Camera e Renderer
+    // 1. Scena con sfumatura di sfondo pulita (stile cielo/mare)
     const scene = new THREE.Scene();
-    
+    scene.background = new THREE.Color(0xa0c4ff);
+
     const camera = new THREE.PerspectiveCamera(
       45,
       container.clientWidth / container.clientHeight,
@@ -21,37 +22,33 @@ export const Scene3D: React.FC = () => {
       1000
     );
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(container.clientWidth, container.clientHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    
-    // Mappatura colore per rendere le texture realistiche (non sbiadite o scure)
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.2;
-    renderer.shadowMap.enabled = true;
 
     container.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // 2. Illuminazione bilanciata
-    const ambientLight = new THREE.AmbientLight(0xffffff, 1.5);
+    // 2. Luci ambientali e direzionali per esaltare texture e acqua
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.8);
     scene.add(ambientLight);
 
-    const mainLight = new THREE.DirectionalLight(0xffffff, 2.5);
-    mainLight.position.set(5, 10, 7);
-    mainLight.castShadow = true;
-    scene.add(mainLight);
+    const sunLight = new THREE.DirectionalLight(0xffffff, 2.5);
+    sunLight.position.set(10, 20, 10);
+    scene.add(sunLight);
 
-    const fillLight = new THREE.DirectionalLight(0xddeeff, 1.0);
-    fillLight.position.set(-5, -2, -5);
+    const fillLight = new THREE.DirectionalLight(0x88ccff, 1.2);
+    fillLight.position.set(-10, -5, -10);
     scene.add(fillLight);
 
-    // 3. Setup Caricamento Modello & Animazioni
+    // 3. Animazioni & Draco Loader
     let mixer: THREE.AnimationMixer | null = null;
-    const clock = new THREE.Clock();
+    let lastTime = performance.now();
 
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/');
@@ -60,31 +57,52 @@ export const Scene3D: React.FC = () => {
     gltfLoader.setDRACOLoader(dracoLoader);
 
     const baseUrl = import.meta.env.BASE_URL || '/';
-    
+
     gltfLoader.load(
       `${baseUrl}models/format1.glb`,
       (gltf) => {
         const model = gltf.scene;
 
-        // --- ROTAZIONE & CORREZIONE ORIENTAMENTO ---
-        // Se il modello guarda verso di te o è ruotato male, orientalo sull'asse Y (180° = Math.PI)
-        model.rotation.y = Math.PI; 
-        
-        // Se è inclinato o a testa in giù, scommenta e regola queste righe:
-        // model.rotation.x = Math.PI / 2;
-        // model.rotation.z = 0;
+        // --- CORREZIONE MATERIALI E ACQUA ---
+        model.traverse((child) => {
+          if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            const mat = mesh.material as THREE.MeshStandardMaterial;
+
+            if (mat) {
+              mat.transparent = true;
+              mat.depthWrite = true;
+
+              // Forza la visibilità dei materiali dell'acqua o trasparenti
+              if (
+                mesh.name.toLowerCase().includes('water') ||
+                mesh.name.toLowerCase().includes('acqua') ||
+                mat.name.toLowerCase().includes('water') ||
+                mat.opacity < 1
+              ) {
+                mat.opacity = 0.85;
+                mat.roughness = 0.1;
+                mat.metalness = 0.1;
+                mat.side = THREE.DoubleSide; // Rende l'acqua visibile da ogni angolazione
+              }
+            }
+          }
+        });
+
+        // --- CORREZIONE ROTAZIONE (Ruota il modello sul lato corretto) ---
+        model.rotation.y = -Math.PI / 2; // Modifica in Math.PI o 0 se desideri un altro orientamento
 
         scene.add(model);
 
-        // --- GESTIONE ANIMAZIONI ---
+        // Riproduzione animazioni GLTF
         if (gltf.animations && gltf.animations.length > 0) {
           mixer = new THREE.AnimationMixer(model);
-          // Riproduce la prima animazione trovata nel file .glb
-          const action = mixer.clipAction(gltf.animations[0]);
-          action.play();
+          gltf.animations.forEach((clip) => {
+            mixer?.clipAction(clip).play();
+          });
         }
 
-        // --- CENTRAGGIO E INQUADRATURA ---
+        // --- INQUADRATURA AUTOMATICA ---
         const box = new THREE.Box3().setFromObject(model);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
@@ -93,9 +111,9 @@ export const Scene3D: React.FC = () => {
 
         const maxDim = Math.max(size.x, size.y, size.z);
         const fov = camera.fov * (Math.PI / 180);
-        const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.8;
+        const cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2)) * 1.6;
 
-        camera.position.set(0, maxDim / 3, cameraZ);
+        camera.position.set(cameraZ * 0.8, maxDim * 0.6, cameraZ);
         camera.lookAt(0, 0, 0);
 
         controls.target.set(0, 0, 0);
@@ -105,20 +123,22 @@ export const Scene3D: React.FC = () => {
       (error) => console.error('Errore nel caricamento del modello 3D:', error)
     );
 
-    // 4. Render Loop (Aggiorna le animazioni a ogni frame)
+    // 4. Render loop senza THREE.Clock (elimina il warning di deprecazione)
     let animationFrameId: number;
 
-    const animate = () => {
+    const animate = (currentTime: number) => {
       animationFrameId = requestAnimationFrame(animate);
 
-      const delta = clock.getDelta();
-      if (mixer) mixer.update(delta); // Fai avanzare l'animazione 3D
+      const delta = (currentTime - lastTime) / 1000;
+      lastTime = currentTime;
+
+      if (mixer) mixer.update(delta);
 
       controls.update();
       renderer.render(scene, camera);
     };
 
-    animate();
+    animate(performance.now());
 
     // 5. Cleanup
     const handleResize = () => {
@@ -144,7 +164,7 @@ export const Scene3D: React.FC = () => {
   return (
     <div 
       ref={containerRef} 
-      style={{ width: '100%', height: '100vh', overflow: 'hidden', background: '#222222' }} 
+      style={{ width: '100%', height: '100vh', overflow: 'hidden' }} 
     />
   );
 };
